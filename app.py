@@ -5,7 +5,7 @@ from flask_jwt_extended import (
 )
 import os
 from config import db, app
-from models import User
+from models import User, Project
 
 # Configurations
 app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-key")
@@ -72,6 +72,24 @@ class Login(Resource):
              return make_response({'error':"Unauthorized"},401)
         
 api.add_resource(Login,'/login',endpoint="login")   
+
+class Project(Resource):
+   def post(self):
+        data = request.get_json()
+        
+        new_project = Project(
+            name=data['name'],
+            description=data['description'],
+            created_at=data['created_at'],
+            ghlink=data['ghlink'],
+            contributors=data['contributors'] 
+        )
+
+        db.session.add(new_project)
+        db.session.commit()
+        return {'message': 'Project created successfully'}, 201
+   
+api.add_resource(Project,'/projects')
 
 if __name__ == '__main__':
     app.run(port=5600,
