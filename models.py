@@ -33,8 +33,9 @@ class Project(db.Model,SerializerMixin):
   id = db.Column(db.Integer,primary_key=True)
   name = db.Column(db.String,nullable=False)  
   description =db.Column(db.String,nullable=False)
-  created_at = db.Column(db.DateTime,default=datetime.now)
+  created_at = db.Column(db.DateTime,default=datetime.now(), nullable=True)
   ghlink = db.Column(db.String,nullable=False)
-  contributors = db.Column(db.String,nullable=False)
+  contributors = db.Column(db.Text,nullable=False)
+
     
      

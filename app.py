@@ -75,21 +75,45 @@ api.add_resource(Login,'/login',endpoint="login")
 
 class Project(Resource):
    def post(self):
-        data = request.get_json()
+      data = request.get_json()
+      print('Received Data',data)
+      name=data['name']
+      description=data['description']
+      ghlink=data['ghlink']
+      contributors=data['contributors'] 
+
+
+      print("name", name)
+      print("Descr", description)
+      print("Glink", ghlink)
+      print("COntributors", contributors)
+
+      if not isinstance(data,dict):
+          return {'error':'Invalid data format'},400
         
+      try:
         new_project = Project(
-            name=data['name'],
-            description=data['description'],
-            created_at=data['created_at'],
-            ghlink=data['ghlink'],
-            contributors=data['contributors'] 
+          name=name,
+          description=description,
+          ghlink=ghlink,
+          contributors=contributors
         )
+
+        print("new poroject", new_project)
 
         db.session.add(new_project)
         db.session.commit()
         return {'message': 'Project created successfully'}, 201
+      except KeyError as e:
+            return {'error': f'Missing field: {str(e)}'}, 400
+      except Exception as e:
+            return {'error': str(e)}, 500
    
 api.add_resource(Project,'/projects')
+
+@app.route('/')
+def index():
+    return 'Welcome to the Flask app!'
 
 if __name__ == '__main__':
     app.run(port=5600,
