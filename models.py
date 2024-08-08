@@ -4,6 +4,7 @@ from sqlalchemy.orm import validates
 from config import db, bcrypt
 from datetime import datetime
 import re
+import json
 
 
 # User model
@@ -35,7 +36,15 @@ class Project(db.Model,SerializerMixin):
   description =db.Column(db.String,nullable=False)
   created_at = db.Column(db.DateTime,default=datetime.now(), nullable=True)
   ghlink = db.Column(db.String,nullable=False)
-  contributors = db.Column(db.Text,nullable=False)
+  _contributors = db.Column("contributors",db.Text,nullable=False)
+
+  @property
+  def contributors(self):
+     return json.loads(self._contributors) 
+  #converts strings from db to objects when you retrieve the attribute
+  @contributors.setter
+  def contributors(self,value):
+     self._contributors=json.dumps(value)
 
     
      

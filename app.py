@@ -4,15 +4,16 @@ from flask_jwt_extended import (
     JWTManager, create_access_token, get_jwt_identity, jwt_required
 )
 import os
-from config import db, app
+from config import db, app, mail
 from models import User, Project
+from flask_mail import Message
 
 # Configurations
+
 app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-key")
 app.config['JWT_TOKEN_LOCATION'] = ['headers']
 jwt = JWTManager(app)
 api=Api(app)
-
 
 @jwt.user_identity_loader
 def user_identity_lookup(user):
@@ -73,7 +74,7 @@ class Login(Resource):
         
 api.add_resource(Login,'/login',endpoint="login")   
 
-class Project(Resource):
+class ProjectR(Resource):
    def post(self):
       data = request.get_json()
       print('Received Data',data)
@@ -103,13 +104,32 @@ class Project(Resource):
 
         db.session.add(new_project)
         db.session.commit()
-        return {'message': 'Project created successfully'}, 201
+
+        for email in contributors.values():
+            send_invitation(email,name)
+
+        
+        return {'message': 'Project created successfully and emails sent'}, 201
       except KeyError as e:
             return {'error': f'Missing field: {str(e)}'}, 400
       except Exception as e:
             return {'error': str(e)}, 500
+      
+def send_invitation(email,project_name):
+    try:
+        msg = Message("You are invited to be a contributor!",
+                      sender=app.config['MAIL_USERNAME'],
+                      recipients=[email])
+        msg.body = f"Hello, you are invited to join the project '{project_name}'. Please sign up or login to participate."
+        mail.send(msg)
+        print(f"Email successfully sent to {email}")
+
+    except Exception as e:
+        # Handle the exception or log it
+        print(f"Failed to send email to {email}: {str(e)}")
+
    
-api.add_resource(Project,'/projects')
+api.add_resource(ProjectR,'/projects')
 
 @app.route('/')
 def index():
