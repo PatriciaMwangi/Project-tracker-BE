@@ -31,6 +31,7 @@ class UserRegistration(Resource):
     email = data.get('email')
     password = data.get('password')
     is_admin = data.get('is_admin', False)
+    cohort_id = data.get('cohort_id')
 
     user = User.query.filter_by(email=email).first()
 
@@ -39,7 +40,8 @@ class UserRegistration(Resource):
         user = User(
           username=username,
           email=email,
-          is_admin=is_admin
+          is_admin=is_admin,
+          cohort_id=cohort_id
         )
         user.password_hash = password
         db.session.add(user)
@@ -61,17 +63,24 @@ class Login(Resource):
     def post(self):
         data = request.get_json()
         user = User.query.filter_by(email=data.get('email')).first()
+        
         if user:
             if user.authenticate(data.get('password')):
                 access_token = create_access_token(identity=user)
-                response = make_response({"user":user.to_dict(),'access_token': access_token},201)
+                
+                # Include the is_admin flag in the user dictionary
+                user_data = user.to_dict()
+                user_data['is_admin'] = user.is_admin
+                
+                response = make_response({"user": user_data, 'access_token': access_token}, 201)
                 return response
             else:
-                 return make_response({'error':"Incorrect password"},401)
+                return make_response({'error': "Incorrect password"}, 401)
         else:
-             return make_response({'error':"Unauthorized"},401)
+            return make_response({'error': "Unauthorized"}, 401)
         
-api.add_resource(Login,'/login',endpoint="login")
+api.add_resource(Login, '/login', endpoint="login")
+
 
 # User CRUD operations
 class UserResource(Resource):
@@ -145,13 +154,35 @@ class ProjectResource(Resource):
                 "id": project.id,
                 "name": project.name,
                 "description": project.description,
-                "github_url": project.github_url
+                "github_url": project.github_url,
+                "users": [{
+                    "id": user.id,
+                    "username": user.username
+                } for user in project.users]
             }
             return make_response(jsonify(project_dict), 200)
     
     # Create a new project
-    def post(self):
-        pass
+    # def post(self):
+    #     data = request.get_json()
+
+    #     new_project = Project(
+    #         name = data.get('name')
+    #         description = data.get('description')
+    #         github_url = data.get('github_url')
+    #         user_id = data.get('user_id')
+    #         cohort_id = data.get('cohort_id')
+    #     )
+    #     db.session.add(new_project)
+    #     db.session.commit()
+
+    #     project_dict = {
+            
+    #     }
+
+        
+
+    #     project = Project.query.filter_by(name=name, description=description, github_url=github_url).first()
 
 
     # Update an existing project
@@ -183,16 +214,15 @@ class ProjectResource(Resource):
 api.add_resource(ProjectResource, '/projects', '/projects/<int:project_id>')      
 
 class ProjectMemberResource(Resource):
-    # Get a list of project members
-    def get(self, project_member_id):
+    def get(self, project_member_id=None):
         if project_member_id is None:
             project_members = ProjectMember.query.all()
             project_members_list = [{
                 "id": project_member.id,
                 "user_id": project_member.user_id,
                 "project_id": project_member.project_id
-            }for project_member in project_members]
-            return make_response(jsonify(project_members_list), 200)
+            } for project_member in project_members]
+            return jsonify(project_members_list)
         else:
             project_member = ProjectMember.query.get_or_404(project_member_id)
             project_member_dict = {
@@ -200,13 +230,22 @@ class ProjectMemberResource(Resource):
                 "user_id": project_member.user_id,
                 "project_id": project_member.project_id
             }
-            return make_response(jsonify(project_member_dict), 200)
-    
-    # Create a new project member
-    def post(self):
-        pass
+            return jsonify(project_member_dict)
 
-    # Update an existing project member
+    def post(self):
+        data = request.get_json()
+        new_project_member = ProjectMember(
+            user_id=data['user_id'],
+            project_id=data['project_id']
+        )
+        db.session.add(new_project_member)
+        db.session.commit()
+        return make_response(jsonify({
+            "id": new_project_member.id,
+            "user_id": new_project_member.user_id,
+            "project_id": new_project_member.project_id
+        }), 201)
+
     def put(self, project_member_id):
         project_member = ProjectMember.query.get_or_404(project_member_id)
         data = request.get_json()
@@ -221,24 +260,109 @@ class ProjectMemberResource(Resource):
             "user_id": project_member.user_id,
             "project_id": project_member.project_id
         }
-        return make_response(jsonify(project_member_dict), 200)
+        return jsonify(project_member_dict)
 
-    # Delete an existing project member
     def delete(self, project_member_id):
         project_member = ProjectMember.query.get_or_404(project_member_id)
         db.session.delete(project_member)
         db.session.commit()
-        return make_response(jsonify({"message": "Project member deleted successful"}), 200)
+        return make_response(jsonify({"message": "Project member deleted successfully"}), 200)
 
 api.add_resource(ProjectMemberResource, '/project_members', '/project_members/<int:project_member_id>')
 
 
-class Cohort(Resource):
-   pass
+class CohortResource(Resource):
+   # Get a list of all cohorts
+   def get(self, cohort_id=None):
+    if cohort_id is None:
+        cohorts = Cohort.query.all()
+        cohorts_list = [{
+            "id": cohort.id,
+            "name": cohort.name,
+            "projects": [{
+                "id": project.id,
+                "name": project.name,
+                "description": project.description,
+                "github_url": project.github_url,
+                "project_members": [{
+                    "id": project_member.id,
+                    "user_id": project_member.user_id,
+                    "project_id": project_member.project_id
+                } for project_member in project.project_members]
+            } for project in cohort.projects]
+        } for cohort in cohorts]
+        return jsonify(cohorts_list)
+    else:
+        cohort = Cohort.query.get_or_404(cohort_id)
+        cohort_dict = {
+            "id": cohort.id,
+            "name": cohort.name,
+            "projects": [{
+                "id": project.id,
+                "name": project.name,
+                "description": project.description,
+                "github_url": project.github_url,
+                "project_members": [{
+                    "id": project_member.id,
+                    "user_id": project_member.user_id,
+                    "project_id": project_member.project_id
+                } for project_member in project.project_members]
+            } for project in cohort.projects]
+        }
+        return jsonify(cohort_dict)
+    
+    # Create a new cohort
+   def post(self):
+       pass
+   
+   # Update an existing cohort
+   def put(self, cohort_id):
+       cohort = Cohort.query.get_or_404(cohort_id)
+       data = request.get_json()
 
+       cohort.name = data.get('name', cohort.name)
+       db.session.commit()
 
-class Profile(Resource):
-   pass
+       cohort_dict = {
+           "id": cohort.id,
+           "name": cohort.name
+       }
+       return jsonify(cohort_dict)
+   
+   # Delete an existing cohort
+   def delete(self, cohort_id):
+       cohort = Cohort.query.get_or_404(cohort_id)
+       db.session.delete(cohort)
+       db.session.commit()
+       return make_response(jsonify({"message": "Cohort deleted successfully"}), 200)
+
+api.add_resource(CohortResource, '/cohorts', '/cohorts/<int:cohort_id>')
+
+# class Profile(Resource):
+#    # Get a list of all profiles
+#    def get(self, profile_id=None):
+#        if profile_id is None:
+#            profiles = Profile.query.all()
+#            profiles_list = [{
+#                "id": profile_id,
+#                "user_id": profiles.user_id
+#                "users": [{
+#                    "id": user.id,
+#                    "username": user.username,
+#                    "email": user.email,
+#                    "cohort_id": user.cohort_id
+#                }for user in profiles.users]
+#            }for profile in profiles]
+#            return jsonify(profiles_list)
+#        else:
+#            profile = Profile.query.get_or_404()
+#            profile_dict = {
+#                "id": profile.id,
+#                "user_id": profile.user_id
+#            }
+#            return jsonify(profile_dict)
+       
+       
 
 class Feedback(Resource):
    pass
