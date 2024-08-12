@@ -4,8 +4,9 @@ from flask_jwt_extended import (
     JWTManager, create_access_token, get_jwt_identity, jwt_required
 )
 import os
-from config import db, app
+from config import db, app, mail
 from models import User, Project, ProjectMember, Cohort, Profile, Feedback
+from flask_mail import Message
 
 # Configurations
 app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-key")
@@ -23,37 +24,57 @@ def user_lookup_callback(_jwt_header, jwt_data):
     identity = jwt_data["sub"]
     return User.query.filter_by(id=identity).one_or_none()
 
+def send_invitation(email,project_name):
+    try:
+        msg = Message(f"You are invited to be a contributor to project {project_name}!",
+                      sender=app.config['MAIL_USERNAME'],
+                      recipients=[email])
+        msg.body = (
+            f"Hello, you are invited to join the project '{project_name}'.\n\n"
+            f"Please sign up or login to participate using the following link:\n"
+            f"http://localhost:3000 \n\n"
+            "Looking forward to your contribution!"
+        )        
+        mail.send(msg)
+        print(f"Email successfully sent to {email}")
+    except Exception as e:
+        print(f"Failed to send email to {email}: {e}")
+
+
+
 # User registration
 class UserRegistration(Resource):
-  def post(self):
-    data = request.get_json()
-    username = data.get('username')
-    email = data.get('email')
-    password = data.get('password')
-    is_admin = data.get('is_admin', False)
+  
 
-    user = User.query.filter_by(email=email).first()
+    def post(self):
+        data = request.get_json()
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
+        is_admin = data.get('is_admin', False)
 
-    if not user:
-      try:
-        user = User(
-          username=username,
-          email=email,
-          is_admin=is_admin
-        )
-        user.password_hash = password
-        db.session.add(user)
-        db.session.commit()
+        user = User.query.filter_by(email=email).first()
 
-        access_token = create_access_token(identity=user)
-        return make_response({"user":user.to_dict(),'access_token': access_token},201)
-      
-      except Exception as e:
-        return {'error': e.args}, 422
+        if not user:
+            try:
+                user = User(
+                username=username,
+                email=email,
+                is_admin=is_admin
+                )
+                user.password_hash = password
+                db.session.add(user)
+                db.session.commit()
 
-    else:
-      return make_response({'error':"Email already registered, kindly log in"},401)  
+                access_token = create_access_token(identity=user)
+                return make_response({"user":user.to_dict(),'access_token': access_token},201)
+        
+            except Exception as e:
+                return {'error': e.args}, 422
 
+        else:
+            return make_response({'error':"Email already registered, kindly log in"},401)  
+    
 api.add_resource(UserRegistration, '/register', endpoint='/register')  
 
 # User login
@@ -148,6 +169,9 @@ class ProjectResource(Resource):
                     "username": member.user.username
                 } for member in project.project_members]  # Correct iteration over project.users
             } for project in projects]
+
+
+
             return make_response(jsonify(projects_list), 200)
         else:
             project = Project.query.get_or_404(project_id)
@@ -217,42 +241,72 @@ class ProjectMemberResource(Resource):
     # Get a list of project members
     def get(self, project_member_id=None):
         if project_member_id is None:
+
             project_members = ProjectMember.query.all()
+
             project_members_list = [{
                 "id": project_member.id,
                 "user_id": project_member.user_id,
                 "username": project_member.user.username,
                 "project_id": project_member.project_id
             }for project_member in project_members]
+
             return make_response(jsonify(project_members_list), 200)
         else:
             project_member = ProjectMember.query.get_or_404(project_member_id)
+
             project_member_dict = {
                 "id": project_member.id,
                 "user_id": project_member.user_id,
                 "username": project_member.user.username,
                 "project_id": project_member.project_id
             }
+
             return make_response(jsonify(project_member_dict), 200)
     
     # Create a new project member
     def post(self):
         data = request.get_json()
 
-        new_project_member = ProjectMember(
-            user_id=data['user_id'],
-            project_id=data['project_id']
-        )
+        emails = data.get('emails')
 
-        db.session.add(new_project_member)
-        db.session.commit()
+        if not emails:
+            return {'mess':'no emails provided'},404
+        
+        emailsFound=[]
 
-        project_member_dict = {
-            "id": new_project_member.id,
-            "user_id": new_project_member.user_id,
-            "project_id": new_project_member.project_id
-        }
-        return make_response(jsonify(project_member_dict), 201)
+        for email in emails:
+
+            user = User.query.filter_by(email=email).first()
+
+            if user:
+                project_member = ProjectMember.query.filter_by(user_id=user.id)
+
+                if not project_member:
+                    new_project_member = ProjectMember(
+                        user_id=data['user_id'],
+                        project_id=data['project_id']
+                    )
+
+                    db.session.add(new_project_member)
+                    db.session.commit()
+
+                    emailsFound.append({
+                            "id": new_project_member.id,
+                            "user_id": new_project_member.user_id,
+                            "username": user.username,
+                            "project_id": new_project_member.project_id
+                        })
+                    
+                    send_invitation(email, "extract project name")  
+
+                print(f"Sending invitation to {email}")
+            else:
+                emailsFound.append({'message': f'User with email {email} is already a project member'})
+        else:
+            emailsFound.append({'message': f'User with email {email} not found'})
+      
+        return make_response(jsonify(emailsFound), 201)
 
     # Update an existing project member
     def put(self, project_member_id):
