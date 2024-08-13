@@ -7,6 +7,9 @@ import os
 from config import db, app, mail
 from models import User, Project, ProjectMember, Cohort, Profile, Feedback
 from flask_mail import Message
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 # Configurations
 app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-key")
@@ -24,21 +27,6 @@ def user_lookup_callback(_jwt_header, jwt_data):
     identity = jwt_data["sub"]
     return User.query.filter_by(id=identity).one_or_none()
 
-def send_invitation(email,project_name):
-    try:
-        msg = Message(f"You are invited to be a contributor to project {project_name}!",
-                      sender=app.config['MAIL_USERNAME'],
-                      recipients=[email])
-        msg.body = (
-            f"Hello, you are invited to join the project '{project_name}'.\n\n"
-            f"Please sign up or login to participate using the following link:\n"
-            f"http://localhost:3000 \n\n"
-            "Looking forward to your contribution!"
-        )        
-        mail.send(msg)
-        print(f"Email successfully sent to {email}")
-    except Exception as e:
-        print(f"Failed to send email to {email}: {e}")
 
 
 
@@ -170,8 +158,6 @@ class ProjectResource(Resource):
                 } for member in project.project_members]  # Correct iteration over project.users
             } for project in projects]
 
-
-
             return make_response(jsonify(projects_list), 200)
         else:
             project = Project.query.get_or_404(project_id)
@@ -206,6 +192,8 @@ class ProjectResource(Resource):
             "description": new_project.description,
             "github_url": new_project.github_url
         }
+        
+
         return make_response(jsonify(project_dict), 201)
 
 
@@ -270,9 +258,13 @@ class ProjectMemberResource(Resource):
 
         emails = data.get('emails')
 
+       
+
+
         if not emails:
             return {'mess':'no emails provided'},404
         
+       
         emailsFound=[]
 
         for email in emails:
@@ -280,8 +272,7 @@ class ProjectMemberResource(Resource):
             user = User.query.filter_by(email=email).first()
 
             if user:
-                project_member = ProjectMember.query.filter_by(user_id=user.id)
-
+                project_member = ProjectMember.query.filter_by(user_id=user.id)      
                 if not project_member:
                     new_project_member = ProjectMember(
                         user_id=data['user_id'],
@@ -291,22 +282,40 @@ class ProjectMemberResource(Resource):
                     db.session.add(new_project_member)
                     db.session.commit()
 
+        
                     emailsFound.append({
                             "id": new_project_member.id,
                             "user_id": new_project_member.user_id,
-                            "username": user.username,
                             "project_id": new_project_member.project_id
                         })
-                    
-                    send_invitation(email, "extract project name")  
-
-                print(f"Sending invitation to {email}")
+                      
+                else:
+                    emailsFound.append({'message': f'User with email {email} is already a project member'})
             else:
-                emailsFound.append({'message': f'User with email {email} is already a project member'})
-        else:
-            emailsFound.append({'message': f'User with email {email} not found'})
-      
+                emailsFound.append({'message': f'User with email {email} not found'})
+            send_invitation(email,'project_name')
+            logging.info(f"Sending invitation to {email}")
+
         return make_response(jsonify(emailsFound), 201)
+    
+def send_invitation(email,project_name):
+    try:
+        msg = Message(f"You are invited to be a contributor to project {project_name}!",
+                      sender=app.config['MAIL_USERNAME'],
+                      recipients=[email])
+        msg.body = (
+            f"Hello, you are invited to join the project '{project_name}'.\n\n"
+            f"Please sign up or login to participate using the following link:\n"
+            f"http://localhost:3000 \n\n"
+            "Looking forward to your contribution!"
+        )        
+        mail.send(msg)
+        logging.info(f"Email successfully sent to {email}")
+        print(f"Email successfully sent to {email}")
+    except Exception as e:
+        logging.error(f"Failed to send email to {email}: {e}")
+        print(f"Failed to send email to {email}: {e}")
+
 
     # Update an existing project member
     def put(self, project_member_id):
